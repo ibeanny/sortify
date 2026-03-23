@@ -1,0 +1,61 @@
+package com.ibeanny.aisorter.controller;
+
+import com.ibeanny.aisorter.model.ProcessResponse;
+import com.ibeanny.aisorter.model.UploadResponse;
+import com.ibeanny.aisorter.service.DocumentProcessingService;
+import com.ibeanny.aisorter.service.FileProcessingService;
+import com.ibeanny.aisorter.service.OpenAiService;
+import org.springframework.http.ResponseEntity;
+import org.springframework.web.bind.annotation.*;
+import org.springframework.web.multipart.MultipartFile;
+
+@RestController
+@RequestMapping("/api/files")
+public class FileController {
+
+    private final FileProcessingService fileProcessingService;
+    private final OpenAiService openAiService;
+    private final DocumentProcessingService documentProcessingService;
+
+    public FileController(FileProcessingService fileProcessingService,
+                          OpenAiService openAiService,
+                          DocumentProcessingService documentProcessingService) {
+        this.fileProcessingService = fileProcessingService;
+        this.openAiService = openAiService;
+        this.documentProcessingService = documentProcessingService;
+    }
+
+    @PostMapping("/upload")
+    public ResponseEntity<?> uploadFiles(@RequestParam("files") MultipartFile[] files) {
+        try {
+            UploadResponse response = fileProcessingService.processFiles(files);
+            return ResponseEntity.ok(response);
+        } catch (IllegalArgumentException e) {
+            return ResponseEntity.badRequest().body(e.getMessage());
+        } catch (Exception e) {
+            return ResponseEntity.internalServerError().body("Failed to read uploaded file(s).");
+        }
+    }
+
+    @PostMapping("/process")
+    public ResponseEntity<?> processFiles(@RequestParam("files") MultipartFile[] files) {
+        try {
+            ProcessResponse response = documentProcessingService.processFiles(files);
+            return ResponseEntity.ok(response);
+        } catch (IllegalArgumentException e) {
+            return ResponseEntity.badRequest().body(e.getMessage());
+        } catch (Exception e) {
+            return ResponseEntity.internalServerError().body("Failed to process uploaded file(s).");
+        }
+    }
+
+    @GetMapping("/test-ai")
+    public ResponseEntity<?> testAI() {
+        try {
+            String result = openAiService.testConnection();
+            return ResponseEntity.ok(result);
+        } catch (Exception e) {
+            return ResponseEntity.internalServerError().body(e.getMessage());
+        }
+    }
+}
