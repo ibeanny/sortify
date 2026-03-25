@@ -45,13 +45,22 @@ cd sortify
 
 ### Configure API Key
 
+Set an environment variable:
+
+PowerShell:
+
+`setx OPENAI_API_KEY "YOUR_API_KEY_HERE"`
+
+Then restart your terminal or IDE.
+
 Create a file:
 
 src/main/resources/application.properties
 
 Add:
 
-openai.api.key=YOUR_API_KEY_HERE
+spring.application.name=aisorter
+openai.api.key=${OPENAI_API_KEY}
 
 ### Run Backend
 
