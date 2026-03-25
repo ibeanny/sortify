@@ -1,5 +1,6 @@
 package com.ibeanny.aisorter.controller;
 
+import com.ibeanny.aisorter.exception.OpenAiIntegrationException;
 import com.ibeanny.aisorter.model.ProcessResponse;
 import com.ibeanny.aisorter.model.UploadResponse;
 import com.ibeanny.aisorter.service.DocumentProcessingService;
@@ -44,6 +45,8 @@ public class FileController {
             return ResponseEntity.ok(response);
         } catch (IllegalArgumentException e) {
             return ResponseEntity.badRequest().body(e.getMessage());
+        } catch (OpenAiIntegrationException e) {
+            return ResponseEntity.status(e.getStatus()).body(e.getMessage());
         } catch (Exception e) {
             return ResponseEntity.internalServerError().body("Failed to process uploaded file(s).");
         }
@@ -54,6 +57,8 @@ public class FileController {
         try {
             String result = openAiService.testConnection();
             return ResponseEntity.ok(result);
+        } catch (OpenAiIntegrationException e) {
+            return ResponseEntity.status(e.getStatus()).body(e.getMessage());
         } catch (Exception e) {
             return ResponseEntity.internalServerError().body(e.getMessage());
         }

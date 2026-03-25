@@ -1,6 +1,10 @@
 package com.ibeanny.aisorter.service;
 
+import com.fasterxml.jackson.databind.JsonNode;
+import com.fasterxml.jackson.databind.ObjectMapper;
 import com.ibeanny.aisorter.config.OpenAiConfig;
+import com.ibeanny.aisorter.exception.OpenAiIntegrationException;
+import org.springframework.http.HttpStatus;
 import org.springframework.stereotype.Service;
 
 import java.io.IOException;
@@ -8,37 +12,30 @@ import java.net.URI;
 import java.net.http.HttpClient;
 import java.net.http.HttpRequest;
 import java.net.http.HttpResponse;
+import java.time.Duration;
+import java.util.LinkedHashMap;
 import java.util.List;
+import java.util.Map;
 
 @Service
 public class OpenAiService {
+    private static final URI RESPONSES_URI = URI.create("https://api.openai.com/v1/responses");
+    private static final String MODEL_NAME = "gpt-4.1-mini";
 
     private final OpenAiConfig config;
     private final HttpClient client;
+    private final ObjectMapper objectMapper;
 
     public OpenAiService(OpenAiConfig config) {
         this.config = config;
-        this.client = HttpClient.newHttpClient();
+        this.client = HttpClient.newBuilder()
+                .connectTimeout(Duration.ofSeconds(20))
+                .build();
+        this.objectMapper = new ObjectMapper();
     }
 
     public String testConnection() throws IOException, InterruptedException {
-        String requestBody = """
-        {
-          "model": "gpt-4.1-mini",
-          "input": "Say hello in one short sentence."
-        }
-        """;
-
-        HttpRequest request = HttpRequest.newBuilder()
-                .uri(URI.create("https://api.openai.com/v1/responses"))
-                .header("Authorization", "Bearer " + config.getApiKey())
-                .header("Content-Type", "application/json")
-                .POST(HttpRequest.BodyPublishers.ofString(requestBody))
-                .build();
-
-        HttpResponse<String> response = client.send(request, HttpResponse.BodyHandlers.ofString());
-
-        return response.body();
+        return sendResponsesRequest("Say hello in one short sentence.");
     }
 
     public String processLines(List<String> lines) throws IOException, InterruptedException {
@@ -73,27 +70,80 @@ public class OpenAiService {
         %s
         """.formatted(joinedLines);
 
-        String escapedPrompt = prompt
-                .replace("\\", "\\\\")
-                .replace("\"", "\\\"")
-                .replace("\n", "\\n");
+        return sendResponsesRequest(prompt);
+    }
 
-        String requestBody = """
-        {
-          "model": "gpt-4.1-mini",
-          "input": "%s"
+    private String sendResponsesRequest(String input) throws IOException, InterruptedException {
+        String apiKey = config.getApiKey();
+        if (apiKey == null || apiKey.isBlank()) {
+            throw new OpenAiIntegrationException(
+                    HttpStatus.BAD_GATEWAY,
+                    "OpenAI API key is missing. Set OPENAI_API_KEY and restart the backend."
+            );
         }
-        """.formatted(escapedPrompt);
 
+        Map<String, Object> requestPayload = new LinkedHashMap<>();
+        requestPayload.put("model", MODEL_NAME);
+        requestPayload.put("input", input);
+
+        String requestBody = objectMapper.writeValueAsString(requestPayload);
         HttpRequest request = HttpRequest.newBuilder()
-                .uri(URI.create("https://api.openai.com/v1/responses"))
-                .header("Authorization", "Bearer " + config.getApiKey())
+                .uri(RESPONSES_URI)
+                .timeout(Duration.ofSeconds(60))
+                .header("Authorization", "Bearer " + apiKey)
                 .header("Content-Type", "application/json")
                 .POST(HttpRequest.BodyPublishers.ofString(requestBody))
                 .build();
 
-        HttpResponse<String> response = client.send(request, HttpResponse.BodyHandlers.ofString());
+        HttpResponse<String> response;
+        try {
+            response = client.send(request, HttpResponse.BodyHandlers.ofString());
+        } catch (InterruptedException e) {
+            Thread.currentThread().interrupt();
+            throw e;
+        } catch (IOException e) {
+            throw new OpenAiIntegrationException(
+                    HttpStatus.BAD_GATEWAY,
+                    "Failed to reach OpenAI.",
+                    e
+            );
+        }
+
+        if (response.statusCode() < 200 || response.statusCode() >= 300) {
+            throw new OpenAiIntegrationException(
+                    mapUpstreamStatus(response.statusCode()),
+                    buildOpenAiErrorMessage(response)
+            );
+        }
 
         return response.body();
+    }
+
+    private HttpStatus mapUpstreamStatus(int upstreamStatus) {
+        if (upstreamStatus == 401 || upstreamStatus == 403) {
+            return HttpStatus.BAD_GATEWAY;
+        }
+        if (upstreamStatus == 408 || upstreamStatus == 429 || upstreamStatus >= 500) {
+            return HttpStatus.BAD_GATEWAY;
+        }
+        return HttpStatus.BAD_GATEWAY;
+    }
+
+    private String buildOpenAiErrorMessage(HttpResponse<String> response) {
+        String fallback = "OpenAI request failed with status %d.".formatted(response.statusCode());
+
+        try {
+            JsonNode root = objectMapper.readTree(response.body());
+            JsonNode errorNode = root.path("error");
+            String message = errorNode.path("message").asText("").trim();
+
+            if (!message.isEmpty()) {
+                return "OpenAI error: " + message;
+            }
+        } catch (Exception ignored) {
+            // Fall back to a generic message if the upstream error body is not JSON.
+        }
+
+        return fallback;
     }
 }

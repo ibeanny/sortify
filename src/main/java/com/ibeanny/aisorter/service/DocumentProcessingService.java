@@ -1,12 +1,15 @@
 package com.ibeanny.aisorter.service;
 
 import com.fasterxml.jackson.core.type.TypeReference;
+import com.fasterxml.jackson.databind.JsonMappingException;
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
+import com.ibeanny.aisorter.exception.OpenAiIntegrationException;
 import com.ibeanny.aisorter.model.ClassifiedLine;
 import com.ibeanny.aisorter.model.CombinedCategoryGroup;
 import com.ibeanny.aisorter.model.ProcessResponse;
 import com.ibeanny.aisorter.model.ProcessedFileResult;
+import org.springframework.http.HttpStatus;
 import org.springframework.stereotype.Service;
 import org.springframework.web.multipart.MultipartFile;
 
@@ -37,25 +40,17 @@ public class DocumentProcessingService {
 
             String content = new String(file.getBytes(), StandardCharsets.UTF_8);
             List<String> cleanedLines = extractCleanLines(content);
+            if (cleanedLines.isEmpty()) {
+                processedFiles.add(new ProcessedFileResult(fileName, List.of(), List.of()));
+                continue;
+            }
 
             String aiRawResponse = openAiService.processLines(cleanedLines);
-
             String jsonText = extractTextContentFromOpenAiResponse(aiRawResponse);
-
-            List<Map<String, String>> parsedItems = objectMapper.readValue(
-                    jsonText,
-                    new TypeReference<List<Map<String, String>>>() {}
-            );
-
-            List<ClassifiedLine> classifiedLines = new ArrayList<>();
+            List<ClassifiedLine> classifiedLines = parseClassifiedLines(jsonText);
             Set<String> categorySet = new LinkedHashSet<>();
-
-            for (Map<String, String> item : parsedItems) {
-                String category = item.getOrDefault("category", "Uncategorized");
-                String value = item.getOrDefault("value", "");
-
-                categorySet.add(category);
-                classifiedLines.add(new ClassifiedLine(value, category, value, 1.0));
+            for (ClassifiedLine classifiedLine : classifiedLines) {
+                categorySet.add(classifiedLine.getCategory());
             }
 
             List<String> discoveredCategories = new ArrayList<>(categorySet);
@@ -106,23 +101,63 @@ public class DocumentProcessingService {
         JsonNode output = root.path("output");
 
         if (!output.isArray() || output.isEmpty()) {
-            throw new RuntimeException("OpenAI response missing output array.");
+            throw new OpenAiIntegrationException(HttpStatus.BAD_GATEWAY, "OpenAI response did not contain any output.");
         }
 
-        JsonNode firstMessage = output.get(0);
-        JsonNode content = firstMessage.path("content");
+        for (JsonNode outputItem : output) {
+            JsonNode content = outputItem.path("content");
+            if (!content.isArray()) {
+                continue;
+            }
 
-        if (!content.isArray() || content.isEmpty()) {
-            throw new RuntimeException("OpenAI response missing content array.");
+            for (JsonNode contentItem : content) {
+                String text = contentItem.path("text").asText("").trim();
+                if (!text.isEmpty()) {
+                    return text;
+                }
+            }
         }
 
-        JsonNode firstContent = content.get(0);
-        JsonNode textNode = firstContent.path("text");
+        throw new OpenAiIntegrationException(HttpStatus.BAD_GATEWAY, "OpenAI response did not contain any text output.");
+    }
 
-        if (textNode.isMissingNode() || textNode.asText().isBlank()) {
-            throw new RuntimeException("OpenAI response missing text field.");
+    private List<ClassifiedLine> parseClassifiedLines(String jsonText) throws IOException {
+        List<Map<String, String>> parsedItems;
+        try {
+            parsedItems = objectMapper.readValue(jsonText, new TypeReference<List<Map<String, String>>>() {});
+        } catch (JsonMappingException e) {
+            throw new OpenAiIntegrationException(
+                    HttpStatus.BAD_GATEWAY,
+                    "OpenAI returned text, but it was not valid classification JSON.",
+                    e
+            );
+        } catch (IOException e) {
+            throw new OpenAiIntegrationException(
+                    HttpStatus.BAD_GATEWAY,
+                    "OpenAI returned text, but it was not valid classification JSON.",
+                    e
+            );
         }
 
-        return textNode.asText();
+        List<ClassifiedLine> classifiedLines = new ArrayList<>();
+        for (Map<String, String> item : parsedItems) {
+            String value = item.getOrDefault("value", "").trim();
+            if (value.isEmpty()) {
+                continue;
+            }
+
+            String rawCategory = item.getOrDefault("category", "").trim();
+            String category = rawCategory.isEmpty() ? "Uncategorized" : rawCategory;
+            classifiedLines.add(new ClassifiedLine(value, category, value, 1.0));
+        }
+
+        if (classifiedLines.isEmpty()) {
+            throw new OpenAiIntegrationException(
+                    HttpStatus.BAD_GATEWAY,
+                    "OpenAI did not return any usable classified lines."
+            );
+        }
+
+        return classifiedLines;
     }
 }
