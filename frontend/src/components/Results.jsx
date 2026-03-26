@@ -1,4 +1,16 @@
-function Results({ data, onDownloadTxt }) {
+function groupItemsByCategory(items = []) {
+    return items.reduce((groups, item) => {
+        const category = item.category || "Uncategorized";
+        if (!groups[category]) {
+            groups[category] = [];
+        }
+
+        groups[category].push(item.value);
+        return groups;
+    }, {});
+}
+
+function Results({ data, onDownloadTxt, onDownloadPerFileTxt }) {
     if (!data) return null;
 
     const simplifiedJson = {
@@ -23,25 +35,60 @@ function Results({ data, onDownloadTxt }) {
                 </div>
             </div>
 
-            {data.combinedCategories?.length > 0 && (
+            {data.files?.length > 0 && (
                 <div className="categories-section">
-                    <h3>Combined Categories</h3>
+                    <h3>Files</h3>
                     <div className="category-grid">
-                        {data.combinedCategories.map((group, index) => (
-                            <div className="category-card" key={index}>
-                                <h4>{group.category}</h4>
-                                <ul>
-                                    {group.values.map((value, i) => (
-                                        <li key={i}>{value}</li>
+                        {data.files.map((file) => (
+                            <details className="category-card collapsible-card" key={file.fileName}>
+                                <summary className="card-summary">
+                                    <h4>{file.fileName}</h4>
+                                </summary>
+                                <div className="card-content">
+                                    {Object.entries(groupItemsByCategory(file.items)).map(([category, values]) => (
+                                        <div className="file-category-group" key={`${file.fileName}-${category}`}>
+                                            <h5>{category}</h5>
+                                            <ul>
+                                                {values.map((value, index) => (
+                                                    <li key={`${file.fileName}-${category}-${index}`}>{value}</li>
+                                                ))}
+                                            </ul>
+                                        </div>
                                     ))}
-                                </ul>
-                            </div>
+                                </div>
+                            </details>
                         ))}
                     </div>
                 </div>
             )}
 
+            {data.combinedCategories?.length > 0 && (
+                <div className="categories-section">
+                    <h3>Combined Results</h3>
+                    <details className="category-card collapsible-card combined-card">
+                        <summary className="card-summary">
+                            <h4>All Files Combined</h4>
+                        </summary>
+                        <div className="card-content">
+                            {data.combinedCategories.map((group, index) => (
+                                <div className="file-category-group" key={`${group.category}-${index}`}>
+                                    <h5>{group.category}</h5>
+                                    <ul>
+                                        {group.values.map((value, i) => (
+                                            <li key={`${group.category}-${i}`}>{value}</li>
+                                        ))}
+                                    </ul>
+                                </div>
+                            ))}
+                        </div>
+                    </details>
+                </div>
+            )}
+
             <div className="results-actions">
+                <button type="button" onClick={onDownloadPerFileTxt}>
+                    Download One TXT Per File
+                </button>
                 <button onClick={onDownloadTxt}>Download TXT</button>
             </div>
 
