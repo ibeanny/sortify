@@ -219,6 +219,27 @@ body {
   font-weight: 700;
 }
 
+.file-selection {
+  margin-top: 10px;
+}
+
+.file-list {
+  list-style: none;
+  margin: 12px auto 0;
+  padding: 0;
+  max-width: 540px;
+  display: grid;
+  gap: 8px;
+}
+
+.file-list li {
+  padding: 10px 14px;
+  border-radius: 12px;
+  background: var(--item-bg);
+  color: var(--text-main);
+  border: 1px solid var(--item-border);
+}
+
 /* ---------------- BUTTONS ---------------- */
 
 button {
@@ -325,11 +346,83 @@ button:disabled {
   box-shadow: var(--card-shadow);
 }
 
+.collapsible-card {
+  padding: 0;
+  overflow: hidden;
+}
+
+.card-summary {
+  list-style: none;
+  cursor: pointer;
+  padding: 24px;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+  user-select: none;
+  -webkit-user-select: none;
+}
+
+.card-summary::-webkit-details-marker {
+  display: none;
+}
+
+.card-summary::after {
+  content: "+";
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 34px;
+  height: 34px;
+  border-radius: 999px;
+  background: var(--secondary-btn-bg);
+  border: 1px solid var(--secondary-btn-border);
+  color: var(--secondary-btn-text);
+  font-size: 1.2rem;
+  font-weight: 700;
+  line-height: 1;
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.18);
+  flex-shrink: 0;
+  transition: transform 0.2s ease, background 0.2s ease, border-color 0.2s ease;
+}
+
+.collapsible-card[open] .card-summary::after {
+  content: "-";
+}
+
+.collapsible-card[open] .card-summary::after,
+.card-summary:hover::after {
+  transform: translateY(-1px);
+}
+
 .category-card h4 {
   margin: 0 0 16px;
   color: var(--text-muted);
   font-size: 1.35rem;
   text-align: center;
+}
+
+.card-summary h4 {
+  margin: 0;
+  text-align: left;
+}
+
+.card-content {
+  padding: 0 24px 24px;
+}
+
+.combined-card {
+  margin-top: 8px;
+}
+
+.file-category-group + .file-category-group {
+  margin-top: 18px;
+}
+
+.file-category-group h5 {
+  margin: 0 0 12px;
+  color: var(--text-main);
+  font-size: 1rem;
 }
 
 .category-card ul {
@@ -352,6 +445,10 @@ button:disabled {
 .results-actions {
   margin-top: 28px;
   text-align: center;
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: center;
+  gap: 12px;
 }
 
 /* ---------------- RAW JSON ---------------- */

@@ -3,12 +3,38 @@ import "./App.css";
 import UploadPanel from "./components/UploadPanel";
 import Results from "./components/Results";
 
+function groupItemsByCategory(items = []) {
+  return items.reduce((groups, item) => {
+    const category = item.category || "Uncategorized";
+    if (!groups[category]) {
+      groups[category] = [];
+    }
+
+    groups[category].push(item.value);
+    return groups;
+  }, {});
+}
+
+function downloadTextFile(filename, content) {
+  const blob = new Blob([content], { type: "text/plain" });
+  const url = URL.createObjectURL(blob);
+
+  const link = document.createElement("a");
+  link.href = url;
+  link.download = filename;
+  document.body.appendChild(link);
+  link.click();
+  document.body.removeChild(link);
+
+  URL.revokeObjectURL(url);
+}
+
 function App() {
   const [theme, setTheme] = useState(() => {
     return localStorage.getItem("sortify-theme") || "light";
   });
 
-  const [selectedFile, setSelectedFile] = useState(null);
+  const [selectedFiles, setSelectedFiles] = useState([]);
   const [responseData, setResponseData] = useState(null);
   const [error, setError] = useState("");
   const [loading, setLoading] = useState(false);
@@ -18,20 +44,22 @@ function App() {
   }, [theme]);
 
   const handleFileChange = (event) => {
-    const file = event.target.files[0];
-    setSelectedFile(file || null);
+    const files = Array.from(event.target.files || []);
+    setSelectedFiles(files);
     setResponseData(null);
     setError("");
   };
 
   const handleUpload = async () => {
-    if (!selectedFile) {
-      setError("Please choose a .txt file first.");
+    if (selectedFiles.length === 0) {
+      setError("Please choose at least one .txt file first.");
       return;
     }
 
     const formData = new FormData();
-    formData.append("files", selectedFile);
+    selectedFiles.forEach((file) => {
+      formData.append("files", file);
+    });
 
     try {
       setLoading(true);
@@ -63,6 +91,23 @@ function App() {
 
     let textContent = "SORTIFY RESULTS\n\n";
 
+    responseData.files?.forEach((file) => {
+      const groupedItems = groupItemsByCategory(file.items);
+      textContent += `File: ${file.fileName}\n`;
+      textContent += `${"=".repeat(file.fileName.length + 6)}\n`;
+
+      Object.entries(groupedItems).forEach(([category, values]) => {
+        textContent += `${category}\n`;
+        textContent += `${"-".repeat(category.length)}\n`;
+
+        values.forEach((value) => {
+          textContent += `- ${value}\n`;
+        });
+
+        textContent += `\n`;
+      });
+    });
+
     responseData.combinedCategories.forEach((group) => {
       textContent += `${group.category}\n`;
       textContent += `${"-".repeat(group.category.length)}\n`;
@@ -77,17 +122,31 @@ function App() {
     textContent += `Total Files: ${responseData.totalFiles}\n`;
     textContent += `Total Lines: ${responseData.totalLines}\n`;
 
-    const blob = new Blob([textContent], { type: "text/plain" });
-    const url = URL.createObjectURL(blob);
+    downloadTextFile("sortify-results.txt", textContent);
+  };
 
-    const link = document.createElement("a");
-    link.href = url;
-    link.download = "sortify-results.txt";
-    document.body.appendChild(link);
-    link.click();
-    document.body.removeChild(link);
+  const handleDownloadPerFileTxt = () => {
+    if (!responseData?.files?.length) return;
 
-    URL.revokeObjectURL(url);
+    responseData.files.forEach((file) => {
+      const groupedItems = groupItemsByCategory(file.items);
+      let textContent = `${file.fileName}\n`;
+      textContent += `${"=".repeat(file.fileName.length)}\n\n`;
+
+      Object.entries(groupedItems).forEach(([category, values]) => {
+        textContent += `${category}\n`;
+        textContent += `${"-".repeat(category.length)}\n`;
+
+        values.forEach((value) => {
+          textContent += `- ${value}\n`;
+        });
+
+        textContent += `\n`;
+      });
+
+      const downloadName = file.fileName.replace(/\.txt$/i, "") + "-sorted.txt";
+      downloadTextFile(downloadName, textContent);
+    });
   };
 
   const toggleTheme = () => {
@@ -112,12 +171,12 @@ function App() {
 
             <h1>Sortify</h1>
             <p className="subtitle">
-              Upload a text file and organize its lines into clean, structured groups.
+              Upload one or more text files and organize their lines into clean, structured groups.
             </p>
           </div>
 
           <UploadPanel
-              selectedFile={selectedFile}
+              selectedFiles={selectedFiles}
               onFileChange={handleFileChange}
               onUpload={handleUpload}
               loading={loading}
@@ -125,7 +184,11 @@ function App() {
 
           {error && <p className="error">{error}</p>}
 
-          <Results data={responseData} onDownloadTxt={handleDownloadTxt} />
+          <Results
+              data={responseData}
+              onDownloadTxt={handleDownloadTxt}
+              onDownloadPerFileTxt={handleDownloadPerFileTxt}
+          />
         </div>
       </div>
   );
